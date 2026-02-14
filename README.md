@@ -1,10 +1,11 @@
 # Field_Node_Firmware
-Firmware for all field node sensors and management
-Firmware Development (ESP-IDF)
-Architecture: FreeRTOS, C/C++ Orchestrator
-Strategy: Bottom-Up Development We build reliability by validating layers in order. We must trust the hardware interface (HAL) before we build independent loops (Tasks), and we must trust those loops before we tie them together (Orchestrator). Connectivity is added last to prevent network stack complexity from destabilizing the core data logger.
+Firmware for all field node sensors and management.
 
-Collaboration
+- **Architecture**: FreeRTOS, C/C++ Orchestrator (ESP-IDF)
+- **Strategy**: Bottom-up development—reliable drivers first, then independent tasks, then the orchestrator.
+
+## Collaboration
+
 1. Please make a branch for yourself to work on
 2. For commits please write out thorough commit messages
 3. Try to limit work to a few finals each commit so there is less chance of two people colliding
