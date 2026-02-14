@@ -4,6 +4,12 @@ Firmware Development (ESP-IDF)
 Architecture: FreeRTOS, C/C++ Orchestrator
 Strategy: Bottom-Up Development We build reliability by validating layers in order. We must trust the hardware interface (HAL) before we build independent loops (Tasks), and we must trust those loops before we tie them together (Orchestrator). Connectivity is added last to prevent network stack complexity from destabilizing the core data logger.
 
+Collaboration
+1. Please make a branch for yourself to work on
+2. For commits please write out thorough commit messages
+3. Try to limit work to a few finals each commit so there is less chance of two people colliding
+4. Possibly set up text chain to make sure two people aren't coding same sensor before pushing changes
+
 ** Glossary & Guidelines**
 
 BSP (Board Support Package): Think of this as the “Wiring Map” for our specific physical board.
