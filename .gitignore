@@ -1,0 +1,13 @@
+# ESP-IDF
+/build/
+/sdkconfig
+/sdkconfig.old
+/dependencies.lock
+
+# Editor
+/.vscode/
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
