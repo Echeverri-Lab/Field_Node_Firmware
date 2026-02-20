@@ -62,5 +62,35 @@ esp_err_t bsp_audio_read(void *dest, size_t len, size_t *bytes_read, uint32_t ti
      * TODO: Wrapper for i2s_read()
      * - Handle bit-shifting if raw data is 32-bit but mic is 24-bit (SPH0645 style)
      */
+    //check input params
+    if (dest == NULL || bytes_read == NULL) {
+        ESP_LOGE(TAG, "Invalid parameters: dest or bytes_read is NULL");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    //convert timeout to tick
+    TickType_t ticks_to_wait = timeout_ms / portTICK_PERIOD_MS;
+
+    //call read func
+    //reads 32bit samples from DMA buffer into dest
+    esp_err_t ret = i2s_read(I2S_NUM_0, dest, len, bytes_read, ticks_to_wait);
+    
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "I2S read failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // SPH0645 outputs 24-bit audio data in 32-bit frames (left-aligned)
+    // effective resolution is 18 bits, so shift right by 14 bits
+    // to normalize data to a usable range
+    
+    // calc num samples (each sample is 4 bytes = 32 bits)
+    size_t num_samples = (*bytes_read) / sizeof(int32_t);
+    int32_t *samples = (int32_t *)dest;
+    
+    for (size_t i = 0; i < num_samples; i++) {
+        // shift right by 14 bits to normalize SPH0645's 18-bit effective resolution
+        samples[i] >>= 14;
+    }
     return ESP_OK;
 }
