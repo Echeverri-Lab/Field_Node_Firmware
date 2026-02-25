@@ -1,28 +1,17 @@
 #pragma once
 
-#include "driver/i2s.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#include "driver/gpio.h"
 #include "esp_err.h"
 
-// Pin Definitions (Matching breadboardtest.ino)
-#define BSP_I2S_BCK_IO      (GPIO_NUM_42) // Customize per schematic
-#define BSP_I2S_WS_IO       (GPIO_NUM_41)
-#define BSP_I2S_DO_IO       (-1)          // Not used (Mic only)
-#define BSP_I2S_DI_IO       (GPIO_NUM_2) // Customize per schematic
+#define BSP_AUDIO_BCLK_IO   (GPIO_NUM_4)  // D3
+#define BSP_AUDIO_WS_IO     (GPIO_NUM_2)  // D1
+#define BSP_AUDIO_DIN_IO    (GPIO_NUM_3)  // D2
+#define BSP_AUDIO_RATE_HZ   (16000)
+#define BSP_AUDIO_PCM_SHIFT (11)
 
-/**
- * @brief Initialize the I2S peripheral for the SPH0645 Microphone
- * 
- * @return esp_err_t ESP_OK on success
- */
 esp_err_t bsp_audio_init(void);
-
-/**
- * @brief Read audio samples from the I2S DMA buffer
- * 
- * @param[out] dest Buffer to write samples to
- * @param[in] len Length of buffer in bytes
- * @param[out] bytes_read Number of bytes actually read
- * @param[in] timeout_ms Wait timeout
- * @return esp_err_t ESP_OK on success
- */
 esp_err_t bsp_audio_read(void *dest, size_t len, size_t *bytes_read, uint32_t timeout_ms);
+void bsp_audio_deinit(void);
