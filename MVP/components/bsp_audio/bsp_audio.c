@@ -21,7 +21,7 @@ esp_err_t bsp_audio_init(void) {
         .sample_rate = 16000,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .communication_format = I2S_COMM_FORMAT_STAND_MBS, //changed from I2S_COMM_FORMAT_STAND_I2S
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
         .dma_buf_count = 4,
         .dma_buf_len = 1024,
@@ -42,7 +42,7 @@ esp_err_t bsp_audio_init(void) {
     //install i2s driver
     esp_err_t ret = i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install i2s driver: %s", esp_err_to_name(ret))
+        ESP_LOGE(TAG, "Failed to install i2s driver: %s", esp_err_to_name(ret));
     }
 
     //configure i2s pins
@@ -92,5 +92,51 @@ esp_err_t bsp_audio_read(void *dest, size_t len, size_t *bytes_read, uint32_t ti
         // shift right by 14 bits to normalize SPH0645's 18-bit effective resolution
         samples[i] >>= 14;
     }
+    return ESP_OK;
+}
+
+/**
+ * @brief Blocking call to fetch raw PCM data from DMA.
+ * * @param buffer Pointer to the destination buffer
+ * @param buffer_size Size of the buffer in bytes
+ * @param timeout_ms Total timeout for the entire read operation
+ * @return esp_err_t ESP_OK on success, or error code
+ */
+esp_err_t read_i2s_buffer(int32_t *buffer, size_t buffer_size, uint32_t timeout_ms) {
+    size_t total_bytes_read = 0;
+    size_t bytes_to_read = buffer_size;
+    uint32_t start_tick = xTaskGetTickCount();
+    
+    while (total_bytes_read < buffer_size) {
+        size_t current_read_len = 0;
+        
+        // Calculate remaining timeout to prevent infinite blocking
+        uint32_t elapsed = (xTaskGetTickCount() - start_tick) * portTICK_PERIOD_MS;
+        if (elapsed >= timeout_ms) {
+            ESP_LOGW(TAG, "Read timeout reached after %u ms", elapsed);
+            return ESP_ERR_TIMEOUT;
+        }
+
+        // Call your existing read function
+        esp_err_t ret = bsp_audio_read(
+            (uint8_t *)buffer + total_bytes_read, 
+            bytes_to_read - total_bytes_read, 
+            &current_read_len, 
+            timeout_ms - elapsed
+        );
+
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Error during buffer fill: %s", esp_err_to_name(ret));
+            return ret;
+        }
+
+        total_bytes_read += current_read_len;
+
+        // If no data was read, yield to prevent a tight loop
+        if (current_read_len == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+
     return ESP_OK;
 }
