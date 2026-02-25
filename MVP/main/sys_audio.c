@@ -19,6 +19,7 @@ static bool s_recording = false;
 static FILE *s_audio_file = NULL;
 static uint32_t s_audio_data_bytes = 0;
 static int64_t s_record_start_ms = 0;
+static bool s_audio_ready = false;
 
 static void write_wav_header(FILE *f, uint32_t sample_rate, uint16_t bits_per_sample,
                              uint16_t channels, uint32_t data_size) {
@@ -48,6 +49,10 @@ static void write_wav_header(FILE *f, uint32_t sample_rate, uint16_t bits_per_sa
 static void stop_recording(void) {
   if (!s_recording || !s_audio_file) {
     s_recording = false;
+    if (s_audio_ready) {
+      bsp_audio_deinit();
+      s_audio_ready = false;
+    }
     return;
   }
 
@@ -56,6 +61,10 @@ static void stop_recording(void) {
   write_wav_header(s_audio_file, BSP_AUDIO_RATE_HZ, 16, 1, s_audio_data_bytes);
   fclose(s_audio_file);
   s_audio_file = NULL;
+  if (s_audio_ready) {
+    bsp_audio_deinit();
+    s_audio_ready = false;
+  }
 
   ESP_LOGI(TAG, "Recording complete. Bytes: %u", s_audio_data_bytes);
 }
@@ -94,16 +103,21 @@ void sys_audio_task(void *pvParameters) {
   int64_t last_cycle_ms = esp_timer_get_time() / 1000;
 
   while (1) {
-    if (bsp_audio_init() != ESP_OK) {
-      vTaskDelay(pdMS_TO_TICKS(2000));
-      continue;
-    }
-
     int64_t now_ms = esp_timer_get_time() / 1000;
 
     if (!s_recording && (now_ms - last_cycle_ms) >= AUDIO_INTERVAL_MS) {
       last_cycle_ms = now_ms;
-      (void)start_recording();
+      if (!s_audio_ready) {
+        if (bsp_audio_init() != ESP_OK) {
+          vTaskDelay(pdMS_TO_TICKS(2000));
+          continue;
+        }
+        s_audio_ready = true;
+      }
+      if (!start_recording()) {
+        bsp_audio_deinit();
+        s_audio_ready = false;
+      }
     }
 
     if (s_recording && s_audio_file) {

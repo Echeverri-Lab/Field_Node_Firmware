@@ -8,6 +8,15 @@
 
 static const char *TAG = "BSP_CAMERA";
 static bool s_camera_ready = false;
+static const int s_capture_retries = 5;
+
+static bool is_valid_jpeg(const camera_fb_t *fb) {
+  if (!fb || !fb->buf || fb->len < 4) {
+    return false;
+  }
+  return fb->buf[0] == 0xFF && fb->buf[1] == 0xD8 &&
+         fb->buf[fb->len - 2] == 0xFF && fb->buf[fb->len - 1] == 0xD9;
+}
 
 esp_err_t bsp_camera_init(void) {
   if (s_camera_ready) {
@@ -35,9 +44,9 @@ esp_err_t bsp_camera_init(void) {
       .ledc_timer = LEDC_TIMER_0,
       .ledc_channel = LEDC_CHANNEL_0,
       .pixel_format = PIXFORMAT_JPEG,
-      .frame_size = FRAMESIZE_XGA,
-      .jpeg_quality = 10,
-      .fb_count = 1,
+      .frame_size = FRAMESIZE_QVGA,
+      .jpeg_quality = 12,
+      .fb_count = 2,
       .fb_location = CAMERA_FB_IN_PSRAM,
       .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
   };
@@ -54,6 +63,12 @@ esp_err_t bsp_camera_init(void) {
     esp_camera_fb_return(warmup);
   }
 
+  sensor_t *sensor = esp_camera_sensor_get();
+  if (sensor) {
+    sensor->set_framesize(sensor, FRAMESIZE_QVGA);
+    sensor->set_quality(sensor, 12);
+  }
+
   s_camera_ready = true;
   ESP_LOGI(TAG, "Camera initialized");
   return ESP_OK;
@@ -66,23 +81,38 @@ camera_fb_t *bsp_camera_capture(void) {
     }
   }
 
-  // First frame can be stale after long idle periods.
-  camera_fb_t *stale = esp_camera_fb_get();
-  if (stale) {
-    esp_camera_fb_return(stale);
-    vTaskDelay(pdMS_TO_TICKS(40));
+  camera_fb_t *fb = NULL;
+  for (int i = 0; i < s_capture_retries; i++) {
+    fb = esp_camera_fb_get();
+    if (fb && is_valid_jpeg(fb)) {
+      return fb;
+    }
+    if (fb) {
+      ESP_LOGW(TAG, "Invalid JPEG frame discarded (len=%u)", (unsigned)fb->len);
+      esp_camera_fb_return(fb);
+      fb = NULL;
+    }
+    vTaskDelay(pdMS_TO_TICKS(80));
   }
 
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) {
-    ESP_LOGW(TAG, "Capture failed, reinitializing camera");
-    bsp_camera_deinit();
-    if (bsp_camera_init() != ESP_OK) {
-      return NULL;
-    }
-    fb = esp_camera_fb_get();
+  ESP_LOGW(TAG, "Capture failed, reinitializing camera");
+  bsp_camera_deinit();
+  if (bsp_camera_init() != ESP_OK) {
+    return NULL;
   }
-  return fb;
+  for (int i = 0; i < s_capture_retries; i++) {
+    fb = esp_camera_fb_get();
+    if (fb && is_valid_jpeg(fb)) {
+      return fb;
+    }
+    if (fb) {
+      ESP_LOGW(TAG, "Invalid JPEG frame discarded after reinit (len=%u)", (unsigned)fb->len);
+      esp_camera_fb_return(fb);
+      fb = NULL;
+    }
+    vTaskDelay(pdMS_TO_TICKS(80));
+  }
+  return NULL;
 }
 
 esp_err_t bsp_camera_set_framesize(framesize_t frame_size) {

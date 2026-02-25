@@ -17,7 +17,7 @@ esp_err_t bsp_audio_init(void) {
 
   i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
   chan_cfg.dma_desc_num = 4;
-  chan_cfg.dma_frame_num = 1024;
+  chan_cfg.dma_frame_num = 512;
 
   esp_err_t err = i2s_new_channel(&chan_cfg, NULL, &s_rx_chan);
   if (err != ESP_OK) {
