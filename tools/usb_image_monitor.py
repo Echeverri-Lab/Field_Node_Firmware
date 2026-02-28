@@ -88,6 +88,10 @@ def start_live_server(out_dir: Path, port: int) -> tuple[ThreadingHTTPServer, st
 const img = document.getElementById('img');
 const aud = document.getElementById('aud');
 const enableAudioBtn = document.getElementById('enableAudio');
+let latestImgMtime = 0;
+let requestedImgMtime = 0;
+let pendingImgMtime = 0;
+let imageLoadInFlight = false;
 let lastWavMtime = 0;
 let audioEnabled = false;
 enableAudioBtn.addEventListener('click', async () => {{
@@ -97,14 +101,39 @@ enableAudioBtn.addEventListener('click', async () => {{
   }} catch (_) {{}}
   enableAudioBtn.textContent = 'Audio Enabled';
 }});
-setInterval(() => {{
-  img.src = '/{latest_rel}?t=' + Date.now();
-}}, 400);
+function requestLatestImage(imgMtime) {{
+  imageLoadInFlight = true;
+  requestedImgMtime = imgMtime;
+  // Use metadata mtime token so the browser only fetches when content changed.
+  img.src = '/{latest_rel}?m=' + imgMtime;
+}}
+
+img.addEventListener('load', () => {{
+  imageLoadInFlight = false;
+  latestImgMtime = requestedImgMtime;
+  if (pendingImgMtime > latestImgMtime) {{
+    const next = pendingImgMtime;
+    pendingImgMtime = 0;
+    requestLatestImage(next);
+  }}
+}});
+
+img.addEventListener('error', () => {{
+  imageLoadInFlight = false;
+}});
+
 setInterval(async () => {{
   try {{
     const r = await fetch('/meta.json?t=' + Date.now(), {{cache: 'no-store'}});
     if (!r.ok) return;
     const meta = await r.json();
+    if (meta.img_mtime_ms && meta.img_mtime_ms > latestImgMtime) {{
+      if (imageLoadInFlight) {{
+        pendingImgMtime = meta.img_mtime_ms;
+      }} else {{
+        requestLatestImage(meta.img_mtime_ms);
+      }}
+    }}
     if (meta.wav_mtime_ms && meta.wav_mtime_ms !== lastWavMtime) {{
       lastWavMtime = meta.wav_mtime_ms;
       aud.src = '/latest.wav?t=' + Date.now();
@@ -114,7 +143,7 @@ setInterval(async () => {{
       }}
     }}
   }} catch (_) {{}}
-}}, 700);
+}}, 300);
 </script>
 </body></html>"""
                 data = page.encode("utf-8")
@@ -246,9 +275,9 @@ def main() -> int:
             continue
 
         line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-        print(line)
 
         if not collecting:
+            print(line)
             m = BEGIN_RE.search(line)
             if m:
                 collecting = True
@@ -315,6 +344,9 @@ def main() -> int:
         tokens = BASE64_RE.findall(line)
         if tokens:
             b64_chunks.extend(tokens)
+        else:
+            # Preserve non-base64 logs while suppressing large payload dumps.
+            print(line)
 
 
 if __name__ == "__main__":
