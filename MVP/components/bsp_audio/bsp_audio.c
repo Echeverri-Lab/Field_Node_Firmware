@@ -1,98 +1,85 @@
 #include "bsp_audio.h"
+
+#include <stdbool.h>
+
+#include "driver/i2s_std.h"
 #include "esp_log.h"
 
 static const char *TAG = "BSP_AUDIO";
 
+static i2s_chan_handle_t s_rx_chan = NULL;
+static bool s_ready = false;
+
 esp_err_t bsp_audio_init(void) {
-    ESP_LOGI(TAG, "Initializing I2S for SPH0645...");
-
-    /* 
-     * TODO: Implement I2S Driver Installation
-     * 1. Define i2s_config_t with:
-     *    - mode: I2S_MODE_MASTER | I2S_MODE_RX
-     *    - sample_rate: 16000
-     *    - format: I2S_CHANNEL_FMT_ONLY_LEFT
-     * 2. Define i2s_pin_config_t with pins from header
-     * 3. Call i2s_driver_install() and i2s_set_pin()
-     */
-    // I2S config for SPH0645 microphone
-    const i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-        .sample_rate = 16000,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_STAND_MBS, //changed from I2S_COMM_FORMAT_STAND_I2S
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 4,
-        .dma_buf_len = 1024,
-        .use_apll = false,
-        .tx_desc_auto_clear = false,
-        .fixed_mclk = 0
-
-    };
-
-    // I2S pin config for SPH0645 microphone
-    const i2s_pin_config_t pin_config = {
-        .bck_io_num = BSP_I2S_BCK_IO,
-        .ws_io_num = BSP_I2S_WS_IO,
-        .data_out_num = BSP_I2S_DO_IO,
-        .data_in_num = BSP_I2S_DI_IO
-    };
-
-    //install i2s driver
-    esp_err_t ret = i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install i2s driver: %s", esp_err_to_name(ret));
-    }
-
-    //configure i2s pins
-    ret = i2s_set_pin(I2S_NUM_0, &pin_config);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set I2S pins: %s", esp_err_to_name(ret));
-        i2s_driver_uninstall(I2S_NUM_0);
-        return ret;
-    }
-
-    ESP_LOGI(TAG, "I2S driver installed and pins configured successfully");
+  if (s_ready) {
     return ESP_OK;
+  }
+
+  i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
+  chan_cfg.dma_desc_num = 4;
+  chan_cfg.dma_frame_num = 512;
+
+  esp_err_t err = i2s_new_channel(&chan_cfg, NULL, &s_rx_chan);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "i2s_new_channel failed: %s", esp_err_to_name(err));
+    return err;
+  }
+
+  i2s_std_config_t std_cfg = {
+      .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(BSP_AUDIO_RATE_HZ),
+      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
+      .gpio_cfg = {
+          .mclk = I2S_GPIO_UNUSED,
+          .bclk = BSP_AUDIO_BCLK_IO,
+          .ws = BSP_AUDIO_WS_IO,
+          .dout = I2S_GPIO_UNUSED,
+          .din = BSP_AUDIO_DIN_IO,
+          .invert_flags = {
+              .mclk_inv = false,
+              .bclk_inv = false,
+              .ws_inv = false,
+          },
+      },
+  };
+  std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
+
+  err = i2s_channel_init_std_mode(s_rx_chan, &std_cfg);
+  if (err != ESP_OK) {
+    i2s_del_channel(s_rx_chan);
+    s_rx_chan = NULL;
+    ESP_LOGE(TAG, "i2s_channel_init_std_mode failed: %s", esp_err_to_name(err));
+    return err;
+  }
+
+  err = i2s_channel_enable(s_rx_chan);
+  if (err != ESP_OK) {
+    i2s_del_channel(s_rx_chan);
+    s_rx_chan = NULL;
+    ESP_LOGE(TAG, "i2s_channel_enable failed: %s", esp_err_to_name(err));
+    return err;
+  }
+
+  s_ready = true;
+  ESP_LOGI(TAG, "I2S microphone initialized");
+  return ESP_OK;
 }
 
 esp_err_t bsp_audio_read(void *dest, size_t len, size_t *bytes_read, uint32_t timeout_ms) {
-    /*
-     * TODO: Wrapper for i2s_read()
-     * - Handle bit-shifting if raw data is 32-bit but mic is 24-bit (SPH0645 style)
-     */
-    //check input params
-    if (dest == NULL || bytes_read == NULL) {
-        ESP_LOGE(TAG, "Invalid parameters: dest or bytes_read is NULL");
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    //convert timeout to tick
-    TickType_t ticks_to_wait = timeout_ms / portTICK_PERIOD_MS;
+  if (!s_ready || !s_rx_chan) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  return i2s_channel_read(s_rx_chan, dest, len, bytes_read, timeout_ms);
+}
 
-    //call read func
-    //reads 32bit samples from DMA buffer into dest
-    esp_err_t ret = i2s_read(I2S_NUM_0, dest, len, bytes_read, ticks_to_wait);
-    
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "I2S read failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    // SPH0645 outputs 24-bit audio data in 32-bit frames (left-aligned)
-    // effective resolution is 18 bits, so shift right by 14 bits
-    // to normalize data to a usable range
-    
-    // calc num samples (each sample is 4 bytes = 32 bits)
-    size_t num_samples = (*bytes_read) / sizeof(int32_t);
-    int32_t *samples = (int32_t *)dest;
-    
-    for (size_t i = 0; i < num_samples; i++) {
-        // shift right by 14 bits to normalize SPH0645's 18-bit effective resolution
-        samples[i] >>= 14;
-    }
-    return ESP_OK;
+void bsp_audio_deinit(void) {
+  if (!s_rx_chan) {
+    s_ready = false;
+    return;
+  }
+  i2s_channel_disable(s_rx_chan);
+  i2s_del_channel(s_rx_chan);
+  s_rx_chan = NULL;
+  s_ready = false;
 }
 
 /**
@@ -139,4 +126,19 @@ esp_err_t read_i2s_buffer(int32_t *buffer, size_t buffer_size, uint32_t timeout_
     }
 
     return ESP_OK;
+  if (!s_ready || !s_rx_chan) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  return i2s_channel_read(s_rx_chan, dest, len, bytes_read, timeout_ms);
+}
+
+void bsp_audio_deinit(void) {
+  if (!s_rx_chan) {
+    s_ready = false;
+    return;
+  }
+  i2s_channel_disable(s_rx_chan);
+  i2s_del_channel(s_rx_chan);
+  s_rx_chan = NULL;
+  s_ready = false;
 }
