@@ -21,7 +21,7 @@ except Exception:
 
 BEGIN_RE = re.compile(r"USB_(IMAGE|AUDIO)_BEGIN.*bytes=(\d+).*b64=(\d+)")
 END_RE = re.compile(r"USB_(IMAGE|AUDIO)_END")
-BASE64_RE = re.compile(r"[A-Za-z0-9+/=]+")
+BASE64_LINE_RE = re.compile(r"^[A-Za-z0-9+/=]+$")
 
 
 def open_image(path: Path) -> None:
@@ -340,12 +340,11 @@ def main() -> int:
             expected_b64 = None
             continue
 
-        # Keep only base64 content while in image block.
-        tokens = BASE64_RE.findall(line)
-        if tokens:
-            b64_chunks.extend(tokens)
+        stripped = line.strip()
+        if stripped and BASE64_LINE_RE.fullmatch(stripped):
+            b64_chunks.append(stripped)
         else:
-            # Preserve non-base64 logs while suppressing large payload dumps.
+            # Ignore interleaved log lines while collecting a payload block.
             print(line)
 
 

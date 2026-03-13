@@ -1,8 +1,11 @@
 #include "bsp_storage.h"
 
+#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
 
 #include "driver/sdmmc_default_configs.h"
 #include "driver/sdspi_host.h"
@@ -19,6 +22,58 @@
 
 static const char *TAG = "BSP_STORAGE";
 static bool s_ready = false;
+
+static bool is_retention_candidate(const char *name) {
+  if (!name) {
+    return false;
+  }
+
+  const char *ext = strrchr(name, '.');
+  if (!ext) {
+    return false;
+  }
+
+  return strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".jpeg") == 0 ||
+         strcasecmp(ext, ".wav") == 0;
+}
+
+static esp_err_t scan_dir_for_oldest(const char *dir_path, char *oldest_path,
+                                     size_t oldest_path_len,
+                                     time_t *oldest_mtime, bool *found_any) {
+  DIR *dir = opendir(dir_path);
+  if (!dir) {
+    return ESP_FAIL;
+  }
+
+  struct dirent *entry = NULL;
+  while ((entry = readdir(dir)) != NULL) {
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 ||
+        !is_retention_candidate(entry->d_name)) {
+      continue;
+    }
+
+    char path[160] = {0};
+    int written = snprintf(path, sizeof(path), "%s/%s", dir_path, entry->d_name);
+    if (written < 0 || (size_t)written >= sizeof(path)) {
+      continue;
+    }
+
+    struct stat st = {0};
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+      continue;
+    }
+
+    if (!*found_any || st.st_mtime < *oldest_mtime) {
+      *oldest_mtime = st.st_mtime;
+      *found_any = true;
+      strncpy(oldest_path, path, oldest_path_len - 1);
+      oldest_path[oldest_path_len - 1] = '\0';
+    }
+  }
+
+  closedir(dir);
+  return ESP_OK;
+}
 
 esp_err_t bsp_storage_init(void) {
   if (s_ready) {
@@ -64,6 +119,7 @@ esp_err_t bsp_storage_init(void) {
   mkdir("/sdcard/timelapse", 0775);
   mkdir("/sdcard/pir", 0775);
   mkdir("/sdcard/audio", 0775);
+  mkdir("/sdcard/logs", 0775);
 
   s_ready = true;
   ESP_LOGI(TAG, "SD card mounted");
@@ -108,6 +164,54 @@ esp_err_t bsp_storage_write_blob(const char *path, const void *data, size_t len)
   return (written == len) ? ESP_OK : ESP_FAIL;
 }
 
+esp_err_t bsp_storage_disk_usage(uint64_t *total_bytes, uint64_t *free_bytes) {
+  if (!s_ready || !total_bytes || !free_bytes) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  struct statvfs fs = {0};
+  if (statvfs("/sdcard", &fs) != 0) {
+    return ESP_FAIL;
+  }
+
+  *total_bytes = (uint64_t)fs.f_blocks * (uint64_t)fs.f_frsize;
+  *free_bytes = (uint64_t)fs.f_bavail * (uint64_t)fs.f_frsize;
+  return ESP_OK;
+}
+
+esp_err_t bsp_storage_find_oldest_file(char *out_path, size_t out_len) {
+  if (!s_ready || !out_path || out_len == 0) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  static const char *k_data_dirs[] = {
+      "/sdcard/timelapse",
+      "/sdcard/pir",
+      "/sdcard/audio",
+  };
+
+  bool found_any = false;
+  time_t oldest_mtime = 0;
+  out_path[0] = '\0';
+
+  for (size_t i = 0; i < sizeof(k_data_dirs) / sizeof(k_data_dirs[0]); i++) {
+    if (scan_dir_for_oldest(k_data_dirs[i], out_path, out_len, &oldest_mtime,
+                            &found_any) != ESP_OK) {
+      ESP_LOGW(TAG, "Failed to scan %s for retention", k_data_dirs[i]);
+    }
+  }
+
+  return found_any ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t bsp_storage_delete_file(const char *path) {
+  if (!s_ready || !path || path[0] == '\0') {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  return unlink(path) == 0 ? ESP_OK : ESP_FAIL;
+}
+
 esp_err_t bsp_storage_append_env_log(float latitude, float longitude,
                                      float temperature_c, float humidity_pct,
                                      bool has_fix) {
@@ -127,6 +231,41 @@ esp_err_t bsp_storage_append_env_log(float latitude, float longitude,
     fprintf(logf, "NaN,NaN,");
   }
   fprintf(logf, "%f,%f\n", temperature_c, humidity_pct);
+  fclose(logf);
+
+  return ESP_OK;
+}
+
+esp_err_t bsp_storage_append_health_log(uint32_t uptime_s, uint32_t free_heap_bytes,
+                                        uint32_t min_free_heap_bytes,
+                                        uint64_t storage_free_bytes,
+                                        uint64_t storage_total_bytes) {
+  if (!s_ready) {
+    return ESP_ERR_INVALID_STATE;
+  }
+
+  FILE *logf = fopen("/sdcard/logs/system_health.csv", "a+");
+  if (!logf) {
+    return ESP_FAIL;
+  }
+
+  if (fseek(logf, 0, SEEK_END) != 0) {
+    fclose(logf);
+    return ESP_FAIL;
+  }
+
+  long size = ftell(logf);
+  if (size == 0) {
+    fprintf(logf, "timestamp_ms,uptime_s,free_heap_bytes,min_free_heap_bytes,storage_free_bytes,storage_total_bytes\n");
+  }
+
+  fprintf(logf, "%lld,%u,%u,%u,%llu,%llu\n",
+          (long long)bsp_storage_now_ms(),
+          (unsigned)uptime_s,
+          (unsigned)free_heap_bytes,
+          (unsigned)min_free_heap_bytes,
+          (unsigned long long)storage_free_bytes,
+          (unsigned long long)storage_total_bytes);
   fclose(logf);
 
   return ESP_OK;

@@ -12,6 +12,7 @@ void sys_vision_task(void *pvParameters);
 void sys_audio_task(void *pvParameters);
 void sys_env_task(void *pvParameters);
 void sys_power_task(void *pvParameters);
+void sys_maint_task(void *pvParameters);
 
 static const char *TAG = "APP_MAIN";
 
@@ -28,6 +29,7 @@ void app_main(void) {
   xTaskCreatePinnedToCore(sys_audio_task, "AudioTask", 8192, NULL, 6, NULL, 0);
   xTaskCreatePinnedToCore(sys_env_task, "EnvTask", 4096, NULL, 4, NULL, 1);
   xTaskCreatePinnedToCore(sys_power_task, "PowerTask", 3072, NULL, 10, NULL, 1);
+  xTaskCreatePinnedToCore(sys_maint_task, "MaintTask", 4096, NULL, 3, NULL, 1);
 
   ESP_LOGI(TAG, "All tasks started");
   while (1) {

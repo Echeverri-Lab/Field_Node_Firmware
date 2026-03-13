@@ -11,11 +11,12 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "mbedtls/base64.h"
 
 static const char *TAG = "SYS_AUDIO";
 
-// Keep Sean's lifecycle safety: init/deinit audio per monitoring cycle.
-static const int64_t AUDIO_MONITOR_INTERVAL_MS = 2LL * 60LL * 60LL * 1000LL;
+// Keep periodic reinitialization for DMA hygiene, but monitor continuously.
+static const int64_t AUDIO_MONITOR_INTERVAL_MS = 60LL * 1000LL;
 static const int64_t AUDIO_MONITOR_WINDOW_MS = 60LL * 1000LL;
 static const int64_t AUDIO_TRIGGER_COOLDOWN_MS = 2000;
 
@@ -23,7 +24,7 @@ static const int64_t AUDIO_TRIGGER_COOLDOWN_MS = 2000;
 #define AUDIO_PRE_TRIGGER_SECONDS  5U
 #define AUDIO_POST_TRIGGER_SECONDS 3U
 #define AUDIO_READ_CHUNK_SAMPLES   512U
-#define AUDIO_EVENT_THRESHOLD      2500
+#define AUDIO_EVENT_THRESHOLD      500
 #define AUDIO_EVENT_HIT_COUNT      10U
 
 typedef struct {
@@ -127,6 +128,96 @@ static void write_wav_header(FILE *f, uint32_t sample_rate, uint16_t channels, u
   fwrite(&bits_per_sample, sizeof(bits_per_sample), 1, f);
   fwrite("data", 1, 4, f);
   fwrite(&data_size, sizeof(data_size), 1, f);
+}
+
+static void fill_wav_header_bytes(uint8_t *dest, uint32_t sample_rate, uint16_t channels,
+                                  uint16_t bits_per_sample, uint32_t data_size) {
+  uint32_t byte_rate = sample_rate * channels * bits_per_sample / 8U;
+  uint16_t block_align = (uint16_t)(channels * bits_per_sample / 8U);
+  uint32_t riff_chunk_size = 36U + data_size;
+  uint32_t fmt_chunk_size = 16U;
+  uint16_t audio_format = 1U;
+  size_t offset = 0;
+
+  memcpy(dest + offset, "RIFF", 4);
+  offset += 4;
+  memcpy(dest + offset, &riff_chunk_size, sizeof(riff_chunk_size));
+  offset += sizeof(riff_chunk_size);
+  memcpy(dest + offset, "WAVE", 4);
+  offset += 4;
+  memcpy(dest + offset, "fmt ", 4);
+  offset += 4;
+  memcpy(dest + offset, &fmt_chunk_size, sizeof(fmt_chunk_size));
+  offset += sizeof(fmt_chunk_size);
+  memcpy(dest + offset, &audio_format, sizeof(audio_format));
+  offset += sizeof(audio_format);
+  memcpy(dest + offset, &channels, sizeof(channels));
+  offset += sizeof(channels);
+  memcpy(dest + offset, &sample_rate, sizeof(sample_rate));
+  offset += sizeof(sample_rate);
+  memcpy(dest + offset, &byte_rate, sizeof(byte_rate));
+  offset += sizeof(byte_rate);
+  memcpy(dest + offset, &block_align, sizeof(block_align));
+  offset += sizeof(block_align);
+  memcpy(dest + offset, &bits_per_sample, sizeof(bits_per_sample));
+  offset += sizeof(bits_per_sample);
+  memcpy(dest + offset, "data", 4);
+  offset += 4;
+  memcpy(dest + offset, &data_size, sizeof(data_size));
+}
+
+static bool send_audio_over_usb_base64(const int32_t *samples, size_t sample_count) {
+  uint32_t data_size = (uint32_t)(sample_count * sizeof(int16_t));
+  size_t wav_size = 44U + data_size;
+  size_t b64_cap = 4U * ((wav_size + 2U) / 3U) + 1U;
+
+  uint8_t *wav = (uint8_t *)heap_caps_malloc(wav_size, MALLOC_CAP_SPIRAM);
+  if (!wav) {
+    wav = (uint8_t *)malloc(wav_size);
+  }
+  if (!wav) {
+    ESP_LOGW(TAG, "Failed to allocate USB WAV buffer");
+    return false;
+  }
+
+  unsigned char *b64 = (unsigned char *)malloc(b64_cap);
+  if (!b64) {
+    ESP_LOGW(TAG, "Failed to allocate USB base64 buffer");
+    heap_caps_free(wav);
+    return false;
+  }
+
+  fill_wav_header_bytes(wav, BSP_AUDIO_RATE_HZ, 1, 16, data_size);
+
+  int16_t *pcm16 = (int16_t *)(wav + 44U);
+  for (size_t i = 0; i < sample_count; i++) {
+    pcm16[i] = pcm32_to_pcm16(samples[i]);
+  }
+
+  size_t out_len = 0;
+  int rc = mbedtls_base64_encode(b64, b64_cap, &out_len, wav, wav_size);
+  if (rc != 0) {
+    ESP_LOGW(TAG, "USB audio base64 encode failed: %d", rc);
+    free(b64);
+    heap_caps_free(wav);
+    return false;
+  }
+
+  printf("[USB_AUDIO_BEGIN] bytes=%u b64=%u\n", (unsigned)wav_size, (unsigned)out_len);
+  for (size_t offset = 0; offset < out_len; offset += 256U) {
+    size_t chunk_len = out_len - offset;
+    if (chunk_len > 256U) {
+      chunk_len = 256U;
+    }
+    fwrite(b64 + offset, 1, chunk_len, stdout);
+    printf("\n");
+  }
+  printf("[USB_AUDIO_END]\n");
+  fflush(stdout);
+
+  free(b64);
+  heap_caps_free(wav);
+  return true;
 }
 
 static esp_err_t save_clip_to_wav(const int32_t *samples, size_t sample_count) {
@@ -260,6 +351,11 @@ static esp_err_t record_triggered_clip(void) {
 
   if (err == ESP_OK) {
     ESP_LOGI(TAG, "Audio clip saved (%.2fs)", (float)total_samples / (float)BSP_AUDIO_RATE_HZ);
+    if (send_audio_over_usb_base64(clip, total_samples)) {
+      ESP_LOGI(TAG, "Audio clip sent over USB serial");
+    } else {
+      ESP_LOGW(TAG, "USB audio transfer failed");
+    }
   }
   return err;
 }
