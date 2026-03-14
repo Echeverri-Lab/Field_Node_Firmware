@@ -27,26 +27,36 @@ Use it to track what is actually done, what is blocked, and what comes next.
 
 Status: `Claimed Complete but Not Supported`
 
-- [ ] check in `sdkconfig.defaults`
-- [ ] check in partition table if required
-- [ ] confirm PSRAM and target settings
-- [ ] capture one clean build log
+Goal: another teammate should be able to clone the repo, open `MVP/`, and build the same firmware without relying on hidden local settings.
+
+- [ ] check in `sdkconfig.defaults` so the repo defines the baseline ESP-IDF build settings
+- [ ] check in `partitions.csv` if custom partitioning is required so flash layout is defined in the repo
+- [ ] check in config that targets `esp32s3` with PSRAM enabled so camera and audio buffering use the intended hardware setup
+- [ ] prove that a second teammate can build successfully from a clean checkout using the checked-in config
+- [ ] save one successful clean build log from that clean-checkout build
 
 ### Power
 
 Status: `Not Started`
 
-- [ ] add a clear control path into the power task
-- [ ] make the power task manage `idle`, `capture`, and `sleep` states
+- [ ] add a way for the orchestrator to tell the power task to stay awake, enter capture mode, or go to sleep
+- [ ] implement a power state machine with `boot`, `idle`, `capture`, `upload`, `survival`, and `sleep` states
+- [ ] define each power state clearly:
+  - [ ] `boot` = bring up hardware and decide whether normal operation can start
+  - [ ] `idle` = awake briefly to check system state and decide whether to capture, upload, or return to sleep
+  - [ ] `capture` = sensors are actively collecting data
+  - [ ] `upload` = radio and transfer path are active
+  - [ ] `survival` = stay running but reduce work when the battery or solar input is too weak for normal operation
+  - [ ] `sleep` = true low-power standby until PIR, timer, or button wake occurs
 - [ ] read battery voltage from the ADC
-- [ ] decide and document battery thresholds for normal, low, and critical voltage
+- [ ] define and document battery thresholds for normal, low, and critical voltage
 - [ ] implement `check_battery()`
-- [ ] reduce activity when battery is low
+- [ ] slow down capture, sampling, and uploads when battery is low
 - [ ] block uploads when battery is too low
 - [ ] force safe sleep when battery reaches the critical threshold
-- [ ] handle wake sources for PIR, timer, and button
-- [ ] restore the system cleanly after wake
-- [ ] detect external or charging power if the hardware supports it
+- [ ] configure wake sources for PIR, timer, and button
+- [ ] restore SD, sensors, and task state cleanly after wake
+- [ ] detect charging or external power in firmware if the hardware exposes that signal
 - [ ] support battery-only operation without USB power
 - [ ] add any required firmware handshake for the watchdog / power-cut hardware
 
@@ -54,18 +64,18 @@ Status: `Not Started`
 
 Status: `Partial`
 
-- [ ] add a central event loop
-- [ ] add a way for the orchestrator to send commands to vision, audio, and env tasks
-- [ ] make the orchestrator manage the system state
-- [ ] implement `load_config()`
+- [ ] add one central event loop that receives PIR, timer, audio, GPS, power, and comms events
+- [ ] add command paths from the orchestrator to camera, audio, env, GPS, power, and comms tasks
+- [ ] track the current system mode in one place
+- [ ] implement `load_config()` to read settings at startup
 - [ ] add SD-backed `config.json` support
 - [ ] make PIR events trigger camera capture through the orchestrator
 - [ ] make scheduled env sampling go through the orchestrator
 - [ ] make scheduled audio recording go through the orchestrator
-- [ ] make upload timing go through the orchestrator
-- [ ] make GPS sync go through the orchestrator
-- [ ] make low-battery handling go through the orchestrator
-- [ ] connect the orchestrator to all active tasks (branch progress: `testing` wires in `sys_maint_task`)
+- [ ] make scheduled uploads start from orchestrator timers
+- [ ] make GPS time-sync requests start from the orchestrator
+- [ ] make low-battery events change system behavior through the orchestrator
+- [ ] connect every active task to orchestrator events and commands (branch progress: `testing` wires in `sys_maint_task`)
 
 ### Storage
 
@@ -74,11 +84,11 @@ Status: `Claimed Complete but Not Supported`
 - [ ] implement `disk_usage` (branch progress: `testing`)
 - [ ] implement `find_oldest_file` (branch progress: `testing`)
 - [ ] implement `delete_file` (branch progress: `testing`)
-- [ ] implement `check_storage_space()`
-- [ ] implement `mark_uploaded()`
-- [ ] separate config/log files from media files cleanly
-- [ ] track which files are pending upload vs already uploaded
-- [ ] make automatic cleanup run during normal operation
+- [ ] implement `check_storage_space()` (branch progress: `testing` enforces a 100 MB free-space floor from `sys_maint.c`)
+- [ ] implement `mark_uploaded()` so uploaded files are clearly marked
+- [ ] store config, logs, photos, and audio in separate SD directories (branch progress: `testing` adds `/sdcard/logs`)
+- [ ] track which files still need upload vs which files are already uploaded
+- [ ] run retention cleanup automatically during normal operation (branch progress: `testing` deletes oldest media when storage is low)
 
 ### Camera
 
@@ -86,70 +96,71 @@ Status: `Implemented but Unverified`
 
 - [x] `bsp_camera_init()`
 - [x] `bsp_camera_capture()`
-- [ ] add `set_resolution()` path if kept in MVP
+- [ ] decide whether variable image resolution is required in MVP and implement it if needed
 - [ ] add IR LED control
 - [ ] add a way for the orchestrator to tell the camera task to capture
-- [ ] make the camera task save captured images cleanly to SD
+- [ ] save each capture to a unique JPEG file on SD
 - [ ] stop the camera task from triggering captures on its own
-- [ ] prove one saved JPEG
+- [ ] save one JPEG on device and record the proof log or artifact
 
 ### Audio
 
 Status: `Implemented but Unverified`
 
 - [x] `bsp_audio_init()`
-- [x] read / WAV path
+- [x] audio capture to WAV path
 - [ ] add a way for the orchestrator to tell the audio task to record
 - [x] `record_clip()` path
-- [ ] stop the audio task from relying only on its own timing loop
-- [ ] keep ring buffer path stable
-- [ ] finalize how audio events trigger recordings (branch progress: `testing` lowers threshold and changes monitor cadence)
-- [ ] decide whether streaming debug path stays in MVP (branch progress: `Rachel`, `testing`)
-- [ ] prove one saved WAV
+- [ ] make the audio task wait for orchestrator record commands instead of relying only on its own timing loop
+- [ ] verify the ring buffer keeps the expected pre-trigger audio
+- [ ] choose one audio trigger rule and make recordings start reliably from it (branch progress: `testing` lowers the trigger threshold and changes monitor cadence)
+- [ ] decide whether USB audio streaming remains part of MVP debugging (branch progress: `Rachel` adds streaming work; `testing` adds USB WAV export)
+- [ ] save one WAV on device and record the proof log or artifact
 
 ### Environment
 
 Status: `Partial`
 
 - [x] `bsp_env_read()`
-- [ ] confirm actual sensor target
+- [ ] decide whether firmware should target `SHTC3` or `AHT20` and align code/docs
 - [ ] add a way for the orchestrator to tell the env task to sample
-- [ ] stop the env task from relying only on its own timing loop
-- [ ] make env sampling write clean timestamped log entries
-- [ ] prove env log output
+- [ ] make the env task wait for orchestrator sample commands instead of relying only on its own timing loop
+- [ ] make env sampling write clean timestamped log entries to `env_log.csv`
+- [ ] save one env log entry and record the proof log or artifact
 
 ### GPS
 
 Status: `Partial`
 
 - [x] `bsp_gps_get_latest_fix()`
-- [ ] decide whether epoch time is required in MVP
-- [ ] add GPS-based time update if required
-- [ ] prove valid fix or clean no-fix path
-- [ ] confirm timestamp behavior
+- [ ] decide whether GPS must provide epoch time in MVP
+- [ ] add GPS-based time update if epoch time is required
+- [ ] capture one log entry that shows a valid GPS fix with latitude and longitude
+- [ ] capture one log entry that shows an explicit no-fix result when GPS has no signal
+- [ ] use one timestamp source and one timestamp format for GPS logs, env logs, image filenames, and audio filenames
 
 ### Maintenance
 
 Status: `Not Started`
 
 - [ ] add `sys_health_t`
-- [ ] log system health on a regular interval (branch progress: `testing`, `sys_maint.c`)
-- [ ] run storage cleanup on a regular interval (branch progress: `testing`, `sys_maint.c`)
-- [ ] delete old files when storage gets too full (branch progress: `testing`, `sys_maint.c`)
-- [ ] report free heap, uptime, and battery health
+- [ ] log system health on a regular interval (branch progress: `testing` adds `sys_maint.c` with periodic health logs)
+- [ ] run storage cleanup on a regular interval (branch progress: `testing` adds `sys_maint.c` with scheduled retention checks)
+- [ ] delete old files when storage gets too full (branch progress: `testing` deletes the oldest `.jpg` / `.wav` files)
+- [ ] include free heap, uptime, and battery health in the health log
 
 ### Comms
 
 Status: `Not Started`
 
 - [ ] choose MVP transport: Wi-Fi or Wi-Fi HaLow
-- [ ] bring up the wireless link
-- [ ] define packet format
-- [ ] send data over the chosen transport
+- [ ] connect the field node to the chosen wireless link
+- [ ] define the minimal packet format for MVP uploads
+- [ ] send one payload over the chosen transport
 - [ ] add retry logic
-- [ ] add handshake
-- [ ] fall back to store-and-forward when upload fails
-- [ ] avoid connecting when battery is too low
+- [ ] implement a basic handshake or ping/ack with the receiver
+- [ ] keep data on SD for later upload when a send fails
+- [ ] skip wireless connect attempts when battery is too low
 
 ## Rules for Updating
 
