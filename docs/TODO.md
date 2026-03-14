@@ -1,91 +1,160 @@
-# MVP Firmware Implementation Checklist
+# Firmware TODO
 
-This document is your roadmap for building the BioMesh Field Node firmware. You will work primarily in the `MVP/` directory.
+## Purpose
 
-The code is scaffolded, meaning the files and functions exist, but the logic inside them is missing (marked with `TODO` comments). Your job is to fill in the blanks.
+This is the live source of truth for firmware status and next work.
+Use it to track what is actually done, what is blocked, and what comes next.
 
----
+## Status Key
 
-## 🟢 Phase 1: Environment Setup
+- `Complete`: code and proof exist
+- `Implemented but Unverified`: code exists, proof missing
+- `Partial`: meaningful work exists, some behavior missing
+- `Claimed Complete but Not Supported`: prior claim overstates progress
+- `Not Started`: missing or placeholder
+- `Deferred`: intentionally out of current MVP path
 
-- [ ]  **Install ESP-IDF v5.x**: Follow the [Espressif Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/index.html).
-- [ ]  **Verify Build**: Open a terminal in the `MVP/` directory and run:
-    ```bash
-    idf.py set-target esp32s3
-    idf.py build
-    ```
-    *Success*: The project should compile (even with empty functions) without errors.
+## Top Priorities (2026-03-13)
 
----
+- review `testing` and `Rachel` branch progress and merge what is real
+- make the firmware build reproducible
+- implement the power system firmware
+- implement the orchestrator event flow
 
-## 🟡 Phase 2: Hardware Drivers (BSP)
+## Current Status
 
-*Goal: Get the sensors talking to the ESP32.*
+### Build/config
 
-### 2.1 Camera Driver (`components/bsp_camera/`)
-- [ ]  **`bsp_camera.c`**: Implement `bsp_camera_init()`.
-    - [ ]  Define `camera_config_t` with the pins from `bsp_camera.h`.
-    - [ ]  Call `esp_camera_init()`.
-- [ ]  **`bsp_camera.c`**: Implement `bsp_camera_capture()`.
-    - [ ]  Call `esp_camera_fb_get()`.
-    - [ ]  Return the framebuffer pointer.
+Status: `Claimed Complete but Not Supported`
 
-### 2.2 Audio Driver (`components/bsp_audio/`)
-- [ ]  **`bsp_audio.c`**: Implement `bsp_audio_init()`.
-    - [ ]  Configure `i2s_config_t` for Master RX mode (16kHz, 16-bit or 32-bit).
-    - [ ]  Call `i2s_driver_install()` and `i2s_set_pin()`.
-- [ ]  **`bsp_audio.c`**: Implement `bsp_audio_read()`.
-    - [ ]  Call `i2s_read()` to fetch data from the DMA buffer.
-    - [ ]  (Optional) Shift bits if using SPH0645 (which outputs 24-bit data in a 32-bit frame).
+- [ ] check in `sdkconfig.defaults`
+- [ ] check in partition table if required
+- [ ] confirm PSRAM and target settings
+- [ ] capture one clean build log
 
-### 2.3 Environment Sensors (`components/bsp_env/`)
-- [ ]  **`bsp_env.c`**: Implement `bsp_env_init()`.
-    - [ ]  Configure I2C driver (Master mode).
-    - [ ]  Configure GPIO for PIR sensor (Input mode).
-- [ ]  **`bsp_env.c`**: Implement `bsp_env_read()`.
-    - [ ]  Write I2C commands to trigger AHT20 measurement.
-    - [ ]  Read 6 bytes of data and convert to float (Temperature & Humidity).
+### Power
 
----
+Status: `Not Started`
 
-## 🟠 Phase 3: System Tasks (Application Logic)
+- [ ] add a clear control path into the power task
+- [ ] make the power task manage `idle`, `capture`, and `sleep` states
+- [ ] read battery voltage from the ADC
+- [ ] decide and document battery thresholds for normal, low, and critical voltage
+- [ ] implement `check_battery()`
+- [ ] reduce activity when battery is low
+- [ ] block uploads when battery is too low
+- [ ] force safe sleep when battery reaches the critical threshold
+- [ ] handle wake sources for PIR, timer, and button
+- [ ] restore the system cleanly after wake
+- [ ] detect external or charging power if the hardware supports it
+- [ ] support battery-only operation without USB power
+- [ ] add any required firmware handshake for the watchdog / power-cut hardware
 
-*Goal: Make the system do things (Record, Detect, Upload).*
+### Orchestrator
 
-### 3.1 Orchestrator (`main/app_main.c`)
-- [ ]  **Queue Creation**: Create FreeRTOS queues for inter-task communication.
-    - [ ]  `vision_req_queue`: For sending "Take Picture" commands.
-    - [ ]  `audio_req_queue`: For sending "Start Recording" commands.
-- [ ]  **Task Creation**: Ensure all `sys_*` tasks are pinned to the correct cores.
+Status: `Partial`
 
-### 3.2 Vision Task (`main/sys_vision.c`)
-- [ ]  **Wait for Trigger**: Block on `vision_req_queue` until a message arrives.
-- [ ]  **Capture & Save**:
-    - [ ]  Turn on IR LEDs (if night).
-    - [ ]  Call `bsp_camera_capture()`.
-    - [ ]  Save the framebuffer to SD Card (using standard C `fopen`/`fwrite`).
-    - [ ]  Return framebuffer to driver.
+- [ ] add a central event loop
+- [ ] add a way for the orchestrator to send commands to vision, audio, and env tasks
+- [ ] make the orchestrator manage the system state
+- [ ] implement `load_config()`
+- [ ] add SD-backed `config.json` support
+- [ ] make PIR events trigger camera capture through the orchestrator
+- [ ] make scheduled env sampling go through the orchestrator
+- [ ] make scheduled audio recording go through the orchestrator
+- [ ] make upload timing go through the orchestrator
+- [ ] make GPS sync go through the orchestrator
+- [ ] make low-battery handling go through the orchestrator
+- [ ] connect the orchestrator to all active tasks (branch progress: `testing` wires in `sys_maint_task`)
 
-### 3.3 Audio Task (`main/sys_audio.c`)
-- [ ]  **Ring Buffer**: Allocate a large buffer in PSRAM to hold the last 5-10 seconds of audio.
-- [ ]  **Continuous Loop**:
-    - [ ]  Read from I2S.
-    - [ ]  Push to Ring Buffer.
-    - [ ]  **Event Detection**: Check if amplitude > Threshold.
-    - [ ]  If event: Write buffer to SD Card.
+### Storage
 
-### 3.4 Power Task (`main/sys_power.c`)
-- [ ]  **Battery Monitor**: Periodically read ADC to check battery voltage.
-- [ ]  **Sleep Logic**:
-    - [ ]  If battery < 3.3V, force Deep Sleep.
-    - [ ]  If system is idle, coordinate with Orchestrator to enter Light/Deep Sleep.
+Status: `Claimed Complete but Not Supported`
 
----
+- [ ] implement `disk_usage` (branch progress: `testing`)
+- [ ] implement `find_oldest_file` (branch progress: `testing`)
+- [ ] implement `delete_file` (branch progress: `testing`)
+- [ ] implement `check_storage_space()`
+- [ ] implement `mark_uploaded()`
+- [ ] separate config/log files from media files cleanly
+- [ ] track which files are pending upload vs already uploaded
+- [ ] make automatic cleanup run during normal operation
 
-## 🔴 Phase 4: Verification
+### Camera
 
-- [ ]  **Bench Test**: Run the firmware on the breadboard.
-- [ ]  **Verify Outputs**:
-    - [ ]  Check SD Card for saved images.
-    - [ ]  Check SD Card for `.wav` files.
-    - [ ]  Check Serial Monitor for sensor logs.
+Status: `Implemented but Unverified`
+
+- [x] `bsp_camera_init()`
+- [x] `bsp_camera_capture()`
+- [ ] add `set_resolution()` path if kept in MVP
+- [ ] add IR LED control
+- [ ] add a way for the orchestrator to tell the camera task to capture
+- [ ] make the camera task save captured images cleanly to SD
+- [ ] stop the camera task from triggering captures on its own
+- [ ] prove one saved JPEG
+
+### Audio
+
+Status: `Implemented but Unverified`
+
+- [x] `bsp_audio_init()`
+- [x] read / WAV path
+- [ ] add a way for the orchestrator to tell the audio task to record
+- [x] `record_clip()` path
+- [ ] stop the audio task from relying only on its own timing loop
+- [ ] keep ring buffer path stable
+- [ ] finalize how audio events trigger recordings (branch progress: `testing` lowers threshold and changes monitor cadence)
+- [ ] decide whether streaming debug path stays in MVP (branch progress: `Rachel`, `testing`)
+- [ ] prove one saved WAV
+
+### Environment
+
+Status: `Partial`
+
+- [x] `bsp_env_read()`
+- [ ] confirm actual sensor target
+- [ ] add a way for the orchestrator to tell the env task to sample
+- [ ] stop the env task from relying only on its own timing loop
+- [ ] make env sampling write clean timestamped log entries
+- [ ] prove env log output
+
+### GPS
+
+Status: `Partial`
+
+- [x] `bsp_gps_get_latest_fix()`
+- [ ] decide whether epoch time is required in MVP
+- [ ] add GPS-based time update if required
+- [ ] prove valid fix or clean no-fix path
+- [ ] confirm timestamp behavior
+
+### Maintenance
+
+Status: `Not Started`
+
+- [ ] add `sys_health_t`
+- [ ] log system health on a regular interval (branch progress: `testing`, `sys_maint.c`)
+- [ ] run storage cleanup on a regular interval (branch progress: `testing`, `sys_maint.c`)
+- [ ] delete old files when storage gets too full (branch progress: `testing`, `sys_maint.c`)
+- [ ] report free heap, uptime, and battery health
+
+### Comms
+
+Status: `Not Started`
+
+- [ ] choose MVP transport: Wi-Fi or Wi-Fi HaLow
+- [ ] bring up the wireless link
+- [ ] define packet format
+- [ ] send data over the chosen transport
+- [ ] add retry logic
+- [ ] add handshake
+- [ ] fall back to store-and-forward when upload fails
+- [ ] avoid connecting when battery is too low
+
+## Rules for Updating
+
+- Update this file only when code or evidence changes.
+- Do not mark `Complete` without proof.
+- Use `Implemented but Unverified` when code exists but proof does not.
+- Use `Claimed Complete but Not Supported` when a prior checklist overstated reality.
+- Keep cells short. Put deeper explanation in the audit doc.
