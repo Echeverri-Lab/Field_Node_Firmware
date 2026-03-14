@@ -94,8 +94,8 @@ Status: `Claimed Complete but Not Supported`
 
 Status: `Implemented but Unverified`
 
-- [x] `bsp_camera_init()`
-- [x] `bsp_camera_capture()`
+- [x] `bsp_camera_init()` initializes the camera hardware so the node can use the sensor
+- [x] `bsp_camera_capture()` captures one image frame from the camera
 - [ ] decide whether variable image resolution is required in MVP and implement it if needed
 - [ ] add IR LED control
 - [ ] add a way for the orchestrator to tell the camera task to capture
@@ -107,10 +107,10 @@ Status: `Implemented but Unverified`
 
 Status: `Implemented but Unverified`
 
-- [x] `bsp_audio_init()`
+- [x] `bsp_audio_init()` initializes the microphone and audio interface so recording can start
 - [x] audio capture to WAV path
 - [ ] add a way for the orchestrator to tell the audio task to record
-- [x] `record_clip()` path
+- [x] `record_clip()` path records an audio clip and writes it to a WAV file
 - [ ] make the audio task wait for orchestrator record commands instead of relying only on its own timing loop
 - [ ] verify the ring buffer keeps the expected pre-trigger audio
 - [ ] choose one audio trigger rule and make recordings start reliably from it (branch progress: `testing` lowers the trigger threshold and changes monitor cadence)
@@ -121,7 +121,7 @@ Status: `Implemented but Unverified`
 
 Status: `Partial`
 
-- [x] `bsp_env_read()`
+- [x] `bsp_env_read()` reads the current environmental sensor values for logging
 - [ ] decide whether firmware should target `SHTC3` or `AHT20` and align code/docs
 - [ ] add a way for the orchestrator to tell the env task to sample
 - [ ] make the env task wait for orchestrator sample commands instead of relying only on its own timing loop
@@ -132,7 +132,7 @@ Status: `Partial`
 
 Status: `Partial`
 
-- [x] `bsp_gps_get_latest_fix()`
+- [x] `bsp_gps_get_latest_fix()` returns the most recent GPS fix data from the receiver
 - [ ] decide whether GPS must provide epoch time in MVP
 - [ ] add GPS-based time update if epoch time is required
 - [ ] capture one log entry that shows a valid GPS fix with latitude and longitude
