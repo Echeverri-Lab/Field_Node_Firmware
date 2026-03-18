@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "hal/gpio_types.h"  // Needed for GPIO_NUM_43 and GPIO_NUM_44
 
 #define BSP_GPS_UART    UART_NUM_1
 #define BSP_GPS_TX_PIN  GPIO_NUM_43  // D6

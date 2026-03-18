@@ -1,5 +1,6 @@
 #include "bsp_audio.h"
 #include "bsp_storage.h"
+#include "system_app.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -10,16 +11,13 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "mbedtls/base64.h"
 
 static const char *TAG = "SYS_AUDIO";
 
 // Keep Sean's lifecycle safety: init/deinit audio per monitoring cycle.
-static const int64_t AUDIO_MONITOR_INTERVAL_MS = 2LL * 60LL * 60LL * 1000LL;
-static const int64_t AUDIO_MONITOR_WINDOW_MS = 60LL * 1000LL;
-static const int64_t AUDIO_TRIGGER_COOLDOWN_MS = 2000;
-
 // Rachel-inspired event capture settings.
 #define AUDIO_PRE_TRIGGER_SECONDS  5U
 #define AUDIO_POST_TRIGGER_SECONDS 3U
@@ -180,22 +178,6 @@ static esp_err_t save_clip_to_wav(const int32_t *samples, size_t sample_count) {
   return ESP_OK;
 }
 
-static bool detect_audio_event(const int32_t *samples, size_t sample_count) {
-  size_t hits = 0;
-
-  for (size_t i = 0; i < sample_count; i++) {
-    int32_t shifted = samples[i] >> BSP_AUDIO_PCM_SHIFT;
-    int32_t magnitude = shifted < 0 ? -shifted : shifted;
-    if (magnitude >= AUDIO_EVENT_THRESHOLD) {
-      hits++;
-      if (hits >= AUDIO_EVENT_HIT_COUNT) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 /**
  * @brief Stream audio over USB serial as Base64-encoded PCM16 (similar to camera streaming)
  * 
@@ -248,8 +230,8 @@ static bool stream_audio_over_usb_base64(const int32_t *samples, size_t sample_c
   uint32_t duration_ms = (uint32_t)((sample_count * 1000) / BSP_AUDIO_RATE_HZ);
 
   // Send header with metadata
-  printf("[USB_AUDIO_BEGIN] rate=%u channels=1 bits=16 samples=%u duration_ms=%u b64=%u\n",
-         BSP_AUDIO_RATE_HZ, (unsigned)sample_count, duration_ms, (unsigned)out_len);
+  printf("[USB_AUDIO_BEGIN] rate=%u channels=1 bits=16 samples=%u duration_ms=%lu b64=%u\n",
+         BSP_AUDIO_RATE_HZ, (unsigned)sample_count, (unsigned long)duration_ms, (unsigned)out_len);
   
   // Send base64 encoded audio data
   fwrite(b64, 1, out_len, stdout);
@@ -464,40 +446,21 @@ static esp_err_t record_triggered_clip(void) {
   return err;
 }
 
-static void run_monitor_cycle(void) {
-  int64_t start_ms = bsp_storage_now_ms();
-  int32_t chunk[AUDIO_READ_CHUNK_SAMPLES] = {0};
-
+static esp_err_t record_requested_clip(void) {
   ring_buffer_reset(&s_ring);
-  ESP_LOGI(TAG, "Audio monitor cycle started (%lld ms window)", (long long)AUDIO_MONITOR_WINDOW_MS);
-
-  while ((bsp_storage_now_ms() - start_ms) < AUDIO_MONITOR_WINDOW_MS) {
-    size_t bytes_read = 0;
-    esp_err_t err = bsp_audio_read(chunk, sizeof(chunk), &bytes_read, 100);
-    if (err != ESP_OK) {
-      if (err != ESP_ERR_TIMEOUT) {
-        ESP_LOGW(TAG, "Audio read failed: %s", esp_err_to_name(err));
-      }
-      vTaskDelay(pdMS_TO_TICKS(10));
-      continue;
-    }
-
-    size_t read_samples = bytes_read / sizeof(int32_t);
-    if (read_samples == 0) {
-      vTaskDelay(pdMS_TO_TICKS(5));
-      continue;
-    }
-
-    ring_buffer_write(&s_ring, chunk, read_samples);
-
-    if (detect_audio_event(chunk, read_samples)) {
-      ESP_LOGI(TAG, "Audio event detected");
-      if (record_triggered_clip() != ESP_OK) {
-        ESP_LOGW(TAG, "Triggered clip capture failed");
-      }
-      vTaskDelay(pdMS_TO_TICKS(AUDIO_TRIGGER_COOLDOWN_MS));
-    }
+  if (!bsp_storage_is_ready()) {
+    ESP_LOGW(TAG, "Storage not ready, skipping scheduled recording");
+    return ESP_ERR_INVALID_STATE;
   }
+
+  if (bsp_audio_init() != ESP_OK) {
+    ESP_LOGW(TAG, "Audio init failed for scheduled recording");
+    return ESP_FAIL;
+  }
+
+  esp_err_t err = record_triggered_clip();
+  bsp_audio_deinit();
+  return err;
 }
 
 void sys_audio_task(void *pvParameters) {
@@ -510,9 +473,6 @@ void sys_audio_task(void *pvParameters) {
     vTaskDelete(NULL);
     return;
   }
-
-  // Start first monitoring cycle right after boot for easier field verification.
-  int64_t last_cycle_ms = bsp_storage_now_ms() - AUDIO_MONITOR_INTERVAL_MS;
 
   // Run streaming test on startup for easy testing
   ESP_LOGI(TAG, "Running initial streaming test in 3 seconds...");
@@ -528,21 +488,26 @@ void sys_audio_task(void *pvParameters) {
       s_streaming_enabled = false;
     }
 
-    int64_t now_ms = bsp_storage_now_ms();
-    if ((now_ms - last_cycle_ms) >= AUDIO_MONITOR_INTERVAL_MS) {
-      last_cycle_ms = now_ms;
-
-      if (!bsp_storage_is_ready()) {
-        ESP_LOGW(TAG, "Storage not ready, skipping audio cycle");
-      } else if (bsp_audio_init() != ESP_OK) {
-        ESP_LOGW(TAG, "Audio init failed, skipping audio cycle");
-      } else {
-        run_monitor_cycle();
-        bsp_audio_deinit();
-      }
+    if (!g_audio_req_queue) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+      continue;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(100));
+    audio_msg_t msg = {0};
+    if (xQueueReceive(g_audio_req_queue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
+      switch (msg.type) {
+        case AUDIO_CMD_START_RECORDING:
+          ESP_LOGI(TAG, "Scheduled recording request received");
+          if (record_requested_clip() != ESP_OK) {
+            ESP_LOGW(TAG, "Scheduled recording failed");
+          }
+          break;
+
+        case AUDIO_CMD_STREAM_TEST:
+          sys_audio_enable_streaming();
+          break;
+      }
+    }
   }
 }
 
