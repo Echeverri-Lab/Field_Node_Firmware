@@ -25,13 +25,14 @@ Use it to track what is actually done, what is blocked, and what comes next.
 
 ### Build/config
 
-Status: `Claimed Complete but Not Supported`
+Status: `Partial`
 
 Goal: another teammate should be able to clone the repo, open `MVP/`, and build the same firmware without relying on hidden local settings.
 
-- [ ] check in `sdkconfig.defaults` so the repo defines the baseline ESP-IDF build settings
-- [ ] check in `partitions.csv` if custom partitioning is required so flash layout is defined in the repo
-- [ ] check in config that targets `esp32s3` with PSRAM enabled so camera and audio buffering use the intended hardware setup
+- [x] check in `sdkconfig.defaults` so the repo defines the baseline ESP-IDF build settings
+- [x] confirm whether a custom `partitions.csv` is required; current build uses ESP-IDF's built-in `partitions_singleapp.csv`
+- [x] check in config that targets `esp32s3` with PSRAM enabled so camera and audio buffering use the intended hardware setup
+- local reference build log: `docs/build_logs/2026-03-20_mvp_build.log` (useful, but not a clean-checkout proof)
 - [ ] prove that a second teammate can build successfully from a clean checkout using the checked-in config
 - [ ] save one successful clean build log from that clean-checkout build
 
@@ -79,16 +80,16 @@ Status: `Partial`
 
 ### Storage
 
-Status: `Claimed Complete but Not Supported`
+Status: `Partial`
 
-- [ ] implement `disk_usage` (branch progress: `testing`)
-- [ ] implement `find_oldest_file` (branch progress: `testing`)
-- [ ] implement `delete_file` (branch progress: `testing`)
-- [ ] implement `check_storage_space()` (branch progress: `testing` enforces a 100 MB free-space floor from `sys_maint.c`)
-- [ ] implement `mark_uploaded()` so uploaded files are clearly marked
-- [ ] store config, logs, photos, and audio in separate SD directories (branch progress: `testing` adds `/sdcard/logs`)
+- [x] implement `disk_usage`
+- [x] implement `find_oldest_file`
+- [x] implement `delete_file`
+- [x] implement periodic storage free-space enforcement (`sys_maint.c` enforces a 100 MB free-space floor)
+- [x] implement `mark_uploaded()` so uploaded files can be clearly marked with a `.upl` suffix
+- [ ] store config, logs, photos, and audio in separate SD directories (logs/photos/audio exist; config storage is still missing)
 - [ ] track which files still need upload vs which files are already uploaded
-- [ ] run retention cleanup automatically during normal operation (branch progress: `testing` deletes oldest media when storage is low)
+- [x] run retention cleanup automatically during normal operation
 
 ### Camera
 
@@ -99,7 +100,7 @@ Status: `Implemented but Unverified`
 - [ ] decide whether variable image resolution is required in MVP and implement it if needed
 - [ ] add IR LED control
 - [ ] add a way for the orchestrator to tell the camera task to capture
-- [ ] save each capture to a unique JPEG file on SD
+- [x] save each capture to a unique JPEG file on SD
 - [ ] stop the camera task from triggering captures on its own
 - [ ] save one JPEG on device and record the proof log or artifact
 
@@ -113,8 +114,8 @@ Status: `Implemented but Unverified`
 - [x] `record_clip()` path records an audio clip and writes it to a WAV file
 - [ ] make the audio task wait for orchestrator record commands instead of relying only on its own timing loop
 - [ ] verify the ring buffer keeps the expected pre-trigger audio
-- [ ] choose one audio trigger rule and make recordings start reliably from it (branch progress: `testing` lowers the trigger threshold and changes monitor cadence)
-- [ ] decide whether USB audio streaming remains part of MVP debugging (branch progress: `Rachel` adds streaming work; `testing` adds USB WAV export)
+- [ ] choose one audio trigger rule and make recordings start reliably from it
+- [ ] decide whether USB audio streaming remains part of MVP debugging
 - [ ] save one WAV on device and record the proof log or artifact
 
 ### Environment
@@ -122,10 +123,10 @@ Status: `Implemented but Unverified`
 Status: `Partial`
 
 - [x] `bsp_env_read()` reads the current environmental sensor values for logging
-- [ ] decide whether firmware should target `SHTC3` or `AHT20` and align code/docs
+- [x] decide whether firmware should target `SHTC3` or `AHT20` and align code/docs (`SHTC3` is the current implementation)
 - [ ] add a way for the orchestrator to tell the env task to sample
 - [ ] make the env task wait for orchestrator sample commands instead of relying only on its own timing loop
-- [ ] make env sampling write clean timestamped log entries to `env_log.csv`
+- [x] make env sampling write clean timestamped log entries to `env_log.csv`
 - [ ] save one env log entry and record the proof log or artifact
 
 ### GPS
@@ -141,12 +142,12 @@ Status: `Partial`
 
 ### Maintenance
 
-Status: `Not Started`
+Status: `Partial`
 
 - [ ] add `sys_health_t`
-- [ ] log system health on a regular interval (branch progress: `testing` adds `sys_maint.c` with periodic health logs)
-- [ ] run storage cleanup on a regular interval (branch progress: `testing` adds `sys_maint.c` with scheduled retention checks)
-- [ ] delete old files when storage gets too full (branch progress: `testing` deletes the oldest `.jpg` / `.wav` files)
+- [x] log system health on a regular interval
+- [x] run storage cleanup on a regular interval
+- [x] delete old files when storage gets too full
 - [ ] include free heap, uptime, and battery health in the health log
 
 ### Comms

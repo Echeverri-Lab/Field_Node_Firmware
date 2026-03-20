@@ -18,6 +18,7 @@ esp_err_t bsp_storage_write_blob(const char *path, const void *data, size_t len)
 esp_err_t bsp_storage_disk_usage(uint64_t *total_bytes, uint64_t *free_bytes);
 esp_err_t bsp_storage_find_oldest_file(char *out_path, size_t out_len);
 esp_err_t bsp_storage_delete_file(const char *path);
+esp_err_t bsp_storage_mark_uploaded(const char *path, char *out_path, size_t out_path_len);
 esp_err_t bsp_storage_append_env_log(float latitude, float longitude,
                                      float temperature_c, float humidity_pct,
                                      bool has_fix);

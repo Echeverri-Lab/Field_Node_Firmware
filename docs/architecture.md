@@ -22,7 +22,7 @@ The system is divided into independent tasks, coordinated by a central Orchestra
 | **Vision Task (`sys_vision`)** | Medium | 8KB+ | Control **OV2640** (NoIR), capture JPEGs, manage IR LEDs (940nm). |
 | **Audio Task (`sys_audio`)** | Real-time | 8KB | Continuous I2S recording (**SPH0645**), buffering (PSRAM Ring Buffer). |
 | **Comms Task (`sys_comms`)** | Low | 6KB | **WiFi HaLow** management, Store-and-Forward upload logic. |
-| **Sensors Task (`sys_env`)** | Low | 3KB | Poll I2C sensors (**AHT20**), read battery ADC. |
+| **Sensors Task (`sys_env`)** | Low | 3KB | Poll I2C sensors (**SHTC3**), read battery ADC. |
 | **Power Task (`sys_power`)** | Critical | 2KB | PMIC management, sleep scheduling, battery protection. |
 | **Maintenance Task (`sys_maint`)** | Low | 2KB | System health logging, storage retention (delete oldest). |
 
@@ -48,7 +48,7 @@ Tasks communicate via **FreeRTOS Primitives**:
 ### Interfaces
 *   **I2S**: **SPH0645** MEMS Microphone (`sys_audio`)
 *   **SPI**: **OV2640** Camera (`sys_vision`) & SD Card (Storage)
-*   **I2C**: **AHT20** Temp/Hum Sensor & PMIC (`sys_env`)
+*   **I2C**: **SHTC3** Temp/Hum Sensor & PMIC (`sys_env`)
 *   **UART**: **L76K** GNSS Module & Debug Console
 *   **GPIO**:
     *   **Inputs**: PIR Sensor (Wakeup source)
@@ -67,7 +67,7 @@ main/
 components/
   ├── bsp_camera/         # OV2640 Driver Wrapper
   ├── bsp_audio/          # I2S/SPH0645 Driver
-  ├── bsp_env/            # AHT20 & I2C Driver
+  ├── bsp_env/            # SHTC3 & I2C Driver
   ├── bsp_gps/            # L76K / NMEA Parser
   └── bsp_storage/        # SD Card / SPIFFS Management
 ```

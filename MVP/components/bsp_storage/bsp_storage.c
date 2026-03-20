@@ -28,13 +28,28 @@ static bool is_retention_candidate(const char *name) {
     return false;
   }
 
-  const char *ext = strrchr(name, '.');
-  if (!ext) {
+  size_t len = strlen(name);
+  if (len == 0) {
     return false;
   }
 
-  return strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".jpeg") == 0 ||
-         strcasecmp(ext, ".wav") == 0;
+  static const char *k_extensions[] = {
+      ".jpg",
+      ".jpeg",
+      ".wav",
+      ".jpg.upl",
+      ".jpeg.upl",
+      ".wav.upl",
+  };
+
+  for (size_t i = 0; i < sizeof(k_extensions) / sizeof(k_extensions[0]); i++) {
+    size_t ext_len = strlen(k_extensions[i]);
+    if (len >= ext_len && strcasecmp(name + (len - ext_len), k_extensions[i]) == 0) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 static esp_err_t scan_dir_for_oldest(const char *dir_path, char *oldest_path,
@@ -210,6 +225,52 @@ esp_err_t bsp_storage_delete_file(const char *path) {
   }
 
   return unlink(path) == 0 ? ESP_OK : ESP_FAIL;
+}
+
+esp_err_t bsp_storage_mark_uploaded(const char *path, char *out_path, size_t out_path_len) {
+  if (!s_ready || !path || path[0] == '\0') {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  struct stat st = {0};
+  if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+    return ESP_ERR_NOT_FOUND;
+  }
+
+  const char *suffix = ".upl";
+  size_t path_len = strlen(path);
+  size_t suffix_len = strlen(suffix);
+
+  if (path_len > suffix_len &&
+      strcasecmp(path + (path_len - suffix_len), suffix) == 0) {
+    if (out_path && out_path_len > 0) {
+      if (path_len >= out_path_len) {
+        return ESP_ERR_INVALID_SIZE;
+      }
+      memcpy(out_path, path, path_len + 1U);
+    }
+    return ESP_OK;
+  }
+
+  char renamed[192] = {0};
+  int written = snprintf(renamed, sizeof(renamed), "%s%s", path, suffix);
+  if (written < 0 || (size_t)written >= sizeof(renamed)) {
+    return ESP_ERR_INVALID_SIZE;
+  }
+
+  if (rename(path, renamed) != 0) {
+    return ESP_FAIL;
+  }
+
+  if (out_path && out_path_len > 0) {
+    size_t renamed_len = strlen(renamed);
+    if (renamed_len >= out_path_len) {
+      return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(out_path, renamed, renamed_len + 1U);
+  }
+
+  return ESP_OK;
 }
 
 esp_err_t bsp_storage_append_env_log(float latitude, float longitude,
