@@ -1,0 +1,22 @@
+{
+  "label": "2026-03-20_usb_monitor",
+  "created_at_utc": "2026-03-20T22:39:26.511708+00:00",
+  "source": "usb_monitor",
+  "note": "Latest USB monitor JPG/WAV captured during bench testing.",
+  "files": [
+    {
+      "name": "latest.jpg",
+      "kind": "image",
+      "bytes": 92754,
+      "sha256": "d1d9b8bf79f12f743c3a980059e76bd26aff3cd1330add7f406b3915defbcba0",
+      "copied_from": "captures/latest.jpg"
+    },
+    {
+      "name": "latest.wav",
+      "kind": "audio",
+      "bytes": 48044,
+      "sha256": "f0e4c9e1cc14714401d723188ff0c714637644f354c4625a555fb1714d73e097",
+      "copied_from": "captures/latest.wav"
+    }
+  ]
+}

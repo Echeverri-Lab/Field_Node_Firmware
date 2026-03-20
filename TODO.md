@@ -102,6 +102,7 @@ Status: `Implemented but Unverified`
 - [ ] add a way for the orchestrator to tell the camera task to capture
 - [x] save each capture to a unique JPEG file on SD
 - [ ] stop the camera task from triggering captures on its own
+- host-side evidence bundle: `docs/evidence/2026-03-20_usb_monitor/` (useful, but SD-backed proof is still missing)
 - [ ] save one JPEG on device and record the proof log or artifact
 
 ### Audio
@@ -116,6 +117,7 @@ Status: `Implemented but Unverified`
 - [ ] verify the ring buffer keeps the expected pre-trigger audio
 - [ ] choose one audio trigger rule and make recordings start reliably from it
 - [ ] decide whether USB audio streaming remains part of MVP debugging
+- host-side evidence bundle: `docs/evidence/2026-03-20_usb_monitor/` (useful, but SD-backed proof is still missing)
 - [ ] save one WAV on device and record the proof log or artifact
 
 ### Environment
