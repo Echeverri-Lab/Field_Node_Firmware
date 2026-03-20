@@ -1,6 +1,7 @@
 #include "bsp_camera.h"
 #include "bsp_env.h"
 #include "bsp_storage.h"
+#include "system_app.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -8,14 +9,12 @@
 #include <stdint.h>
 
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "mbedtls/base64.h"
 
 static const char *TAG = "SYS_VISION";
-static const int64_t TIMELAPSE_INTERVAL_MS = 5LL * 60LL * 1000LL;
-static const int64_t PIR_COOLDOWN_MS = 5000;
 
 static bool send_image_over_usb_base64(const uint8_t *buf, size_t len) {
   size_t b64_cap = 4 * ((len + 2) / 3) + 1;
@@ -74,24 +73,22 @@ void sys_vision_task(void *pvParameters) {
   (void)pvParameters;
   ESP_LOGI(TAG, "Task started on Core %d", xPortGetCoreID());
 
-  int64_t last_timelapse_ms = esp_timer_get_time() / 1000 - TIMELAPSE_INTERVAL_MS;
-  int64_t last_pir_ms = 0;
-
   while (1) {
-    int64_t now_ms = esp_timer_get_time() / 1000;
-
-    if ((now_ms - last_timelapse_ms) >= TIMELAPSE_INTERVAL_MS) {
-      last_timelapse_ms = now_ms;
-      ESP_LOGI(TAG, "Timelapse trigger");
-      (void)capture_and_store("timelapse", "timelapse", false);
+    if (!g_vision_req_queue) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+      continue;
     }
 
-    if (bsp_pir_check() && (now_ms - last_pir_ms) >= PIR_COOLDOWN_MS) {
-      last_pir_ms = now_ms;
-      ESP_LOGI(TAG, "PIR trigger");
-      (void)capture_and_store("pir", "pir", true);
+    vision_msg_t msg = {0};
+    if (xQueueReceive(g_vision_req_queue, &msg, portMAX_DELAY) != pdTRUE) {
+      continue;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(20));
+    switch (msg.type) {
+      case VISION_CMD_CAPTURE_PHOTO:
+        ESP_LOGI(TAG, "Capture request received");
+        (void)capture_and_store("pir", "pir", msg.send_over_usb);
+        break;
+    }
   }
 }
