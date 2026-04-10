@@ -6,9 +6,9 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 
-#define BSP_AUDIO_BCLK_IO   (GPIO_NUM_9)  // D10
-#define BSP_AUDIO_WS_IO     (GPIO_NUM_7)  // D8
-#define BSP_AUDIO_DIN_IO    (GPIO_NUM_8)  // D9
+#define BSP_AUDIO_BCLK_IO   (GPIO_NUM_1)  // D0
+#define BSP_AUDIO_WS_IO     (GPIO_NUM_2)  // D1
+#define BSP_AUDIO_DIN_IO    (GPIO_NUM_3)  // D2
 #define BSP_AUDIO_RATE_HZ   (16000)
 #define BSP_AUDIO_PCM_SHIFT (14)
 
