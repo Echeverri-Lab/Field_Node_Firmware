@@ -10,7 +10,7 @@
 #define BSP_I2C_SCL_IO   (GPIO_NUM_6)   // D5
 #define BSP_I2C_PORT_NUM (I2C_NUM_0)
 #define BSP_SHTC3_ADDR   (0x70)
-#define BSP_PIR_IO       (GPIO_NUM_1)   // D0
+#define BSP_PIR_IO       (GPIO_NUM_4)   // D3
 
 esp_err_t bsp_env_init(void);
 esp_err_t bsp_env_read(float *temp, float *hum);

@@ -18,6 +18,15 @@ static const char *TAG = "SYS_POWER";
 #define SYS_POWER_CAPTURE_HOLD_MS      10000LL
 #define SYS_POWER_SLEEP_WAKE_TIMER_US  (30ULL * 60ULL * 1000000ULL)
 #define SYS_POWER_BUTTON_WAKE_GPIO     GPIO_NUM_0
+/*
+ * Battery ADC is DISABLED.  ADC1_CHANNEL_8 = GPIO 9 which is the
+ * SD-card MOSI pin.  Initialising the ADC on that channel steals
+ * the pin from the SPI bus and kills SD-card communication.
+ *
+ * Re-enable once a dedicated battery-sense pin with a voltage
+ * divider is wired to a free ADC-capable GPIO.
+ */
+#define SYS_POWER_BATTERY_ADC_ENABLED  0
 #define SYS_POWER_BATTERY_ADC_UNIT     ADC_UNIT_1
 #define SYS_POWER_BATTERY_ADC_CHANNEL  ADC_CHANNEL_8
 #define SYS_POWER_BATTERY_ADC_ATTEN    ADC_ATTEN_DB_12
@@ -36,6 +45,9 @@ static void configure_wakeup_sources(void) {
 }
 
 static esp_err_t battery_adc_init(void) {
+#if !SYS_POWER_BATTERY_ADC_ENABLED
+  return ESP_ERR_NOT_SUPPORTED;
+#else
   if (s_battery_adc) {
     return ESP_OK;
   }
@@ -59,6 +71,7 @@ static esp_err_t battery_adc_init(void) {
     ESP_LOGW(TAG, "Battery ADC channel init failed: %s", esp_err_to_name(err));
   }
   return err;
+#endif
 }
 
 static float read_battery_voltage(void) {
@@ -134,6 +147,11 @@ static void handle_power_command(const power_msg_t *msg) {
       esp_deep_sleep_start();
       break;
   }
+}
+
+float sys_power_get_battery_voltage(void)
+{
+    return read_battery_voltage();
 }
 
 void sys_power_task(void *pvParameters) {

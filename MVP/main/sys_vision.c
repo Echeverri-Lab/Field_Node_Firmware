@@ -66,6 +66,7 @@ static bool capture_and_store(const char *subdir, const char *prefix, bool send_
   }
 
   esp_camera_fb_return(fb);
+  bsp_camera_deinit();
   return ok;
 }
 

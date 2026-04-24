@@ -2,6 +2,7 @@
 #include "bsp_storage.h"
 #include "system_app.h"
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -143,9 +144,16 @@ static esp_err_t save_clip_to_wav(const int32_t *samples, size_t sample_count) {
     return ESP_ERR_INVALID_SIZE;
   }
 
-  FILE *f = fopen(path, "wb+");
+  FILE *f = fopen(path, "wb");
   if (!f) {
-    ESP_LOGW(TAG, "Failed to open %s", path);
+    ESP_LOGW(TAG, "fopen(%s) failed (errno %d: %s), requesting remount...",
+             path, errno, strerror(errno));
+    if (bsp_storage_remount() == ESP_OK) {
+      f = fopen(path, "wb");
+    }
+  }
+  if (!f) {
+    ESP_LOGE(TAG, "Failed to open %s", path);
     return ESP_FAIL;
   }
 
@@ -436,6 +444,8 @@ static esp_err_t record_triggered_clip(void) {
     return err;
   }
 
+  bsp_audio_deinit();
+
   size_t total_samples = copied_pre + captured_post;
   err = save_clip_to_wav(clip, total_samples);
   heap_caps_free(clip);
@@ -474,11 +484,7 @@ void sys_audio_task(void *pvParameters) {
     return;
   }
 
-  // Run streaming test on startup for easy testing
-  ESP_LOGI(TAG, "Running initial streaming test in 3 seconds...");
-  vTaskDelay(pdMS_TO_TICKS(3000));
-  run_streaming_test(false);  // Use raw mode for efficiency
-  ESP_LOGI(TAG, "Initial streaming test complete. Starting normal operation.");
+  ESP_LOGI(TAG, "Audio task ready. Waiting for recording commands.");
 
   while (1) {
     // Check if streaming is requested

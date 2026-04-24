@@ -13,6 +13,7 @@
 #include "bsp_camera.h"
 #include "bsp_env.h"
 #include "bsp_gps.h"
+#include "bsp_halow.h"
 #include "bsp_storage.h"
 #include "system_app.h"
 
@@ -195,7 +196,7 @@ static void route_event(const app_event_t *event) {
       if (g_comms_req_queue) {
         (void)xQueueOverwrite(g_comms_req_queue, &comms);
       }
-      ESP_LOGI(TAG, "Upload requested (comms task not implemented yet)");
+      ESP_LOGI(TAG, "Upload requested");
       break;
     }
 
@@ -223,8 +224,6 @@ void app_main(void) {
   (void)bsp_storage_init();
   (void)bsp_env_init();
   (void)bsp_gps_init();
-  (void)bsp_camera_init();
-
   g_main_event_queue = xQueueCreate(16, sizeof(app_event_t));
   g_vision_req_queue = xQueueCreate(4, sizeof(vision_msg_t));
   g_audio_req_queue = xQueueCreate(4, sizeof(audio_msg_t));
@@ -244,13 +243,14 @@ void app_main(void) {
   xTaskCreatePinnedToCore(sys_audio_task, "AudioTask", 8192, NULL, 6, NULL, 0);
   xTaskCreatePinnedToCore(sys_env_task, "EnvTask", 4096, NULL, 4, NULL, 1);
   xTaskCreatePinnedToCore(sys_power_task, "PowerTask", 4096, NULL, 10, NULL, 1);
+  xTaskCreatePinnedToCore(sys_comms_task, "CommsTask", 8192, NULL, 3, NULL, 1);
 
   ESP_LOGI(TAG, "All tasks started");
 
   int64_t now_ms = esp_timer_get_time() / 1000;
-  int64_t last_env_ms = now_ms - g_system_config.env_interval_ms;
-  int64_t last_audio_ms = now_ms - g_system_config.audio_interval_ms;
-  int64_t last_upload_ms = now_ms - g_system_config.upload_interval_ms;
+  int64_t last_env_ms = now_ms - g_system_config.env_interval_ms + 5000;   /* first at ~5 s */
+  int64_t last_audio_ms = now_ms - g_system_config.audio_interval_ms + 10000; /* first at ~10 s */
+  int64_t last_upload_ms = now_ms;  /* first upload waits a full interval */
   int64_t last_sync_ms = now_ms - g_system_config.sync_interval_ms;
 
   while (1) {

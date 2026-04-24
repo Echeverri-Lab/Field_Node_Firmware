@@ -95,5 +95,9 @@ void sys_vision_task(void *pvParameters);
 void sys_audio_task(void *pvParameters);
 void sys_env_task(void *pvParameters);
 void sys_power_task(void *pvParameters);
+void sys_comms_task(void *pvParameters);
 void sys_audio_enable_streaming(void);
+
+/** Read battery voltage (returns negative on ADC error). */
+float sys_power_get_battery_voltage(void);
 
